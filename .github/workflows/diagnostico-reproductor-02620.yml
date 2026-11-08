@@ -48,7 +48,7 @@ jobs:
           for p in sorted(set(targets)):
             s=p.read_text(errors='replace')
             report.append('\nCLASE '+str(p.relative_to(root))+' lineas='+str(s.count('\n')+1))
-            methods=[m.group(1).strip() for m in re.finditer(r'^\.method (.+),s,re.M)]
+            methods=[m.group(1).strip() for m in re.finditer(r'^\.method (.+)$',s,re.M)]
             for method in methods:
               if any(x in method for x in ('onCreate(','onStart(','onResume(','onPlayer','onPlayback','onError(','onPrepared(')):
                 report.append('METODO '+method[:220])
@@ -56,27 +56,6 @@ jobs:
               count=s.lower().count(term.lower())
               if count: report.append('REFERENCIA '+term+'='+str(count))
           all_smali=list(root.glob('smali*/**/*.smali'))
-          for term in ('Landroidx/media3/exoplayer/ExoPlayer;','Lcom/google/android/exoplayer2/ExoPlayer;','Landroid/widget/VideoView;'):
-            n=sum(term in p.read_text(errors='replace') for p in all_smali)
-            report.append('Clases que mencionan '+term+': '+str(n))
-          out=Path('/tmp/cochi/reporte-reproductor.txt')
-          out.write_text('\n'.join(report)+'\n',encoding='utf-8')
-          print(out.read_text()[:20000])
-          PY
-      - name: Adjuntar solo informe (no APK)
-        uses: actions/upload-artifact@v4
-        with:
-          name: informe-reproductor-02620
-          path: /tmp/cochi/reporte-reproductor.txt
-          retention-days: 7
-,s,re.M)]
-            for method in methods:
-              if any(x in method for x in ('onCreate(','onStart(','onResume(','onPlayer','onPlayback','onError(','onPrepared(')):
-                report.append('METODO '+method[:220])
-            for term in terms:
-              count=s.lower().count(term.lower())
-              if count: report.append('REFERENCIA '+term+'='+str(count))
-          all_smali=list(root.glob('smali*//**/*.smali'))
           for term in ('Landroidx/media3/exoplayer/ExoPlayer;','Lcom/google/android/exoplayer2/ExoPlayer;','Landroid/widget/VideoView;'):
             n=sum(term in p.read_text(errors='replace') for p in all_smali)
             report.append('Clases que mencionan '+term+': '+str(n))
