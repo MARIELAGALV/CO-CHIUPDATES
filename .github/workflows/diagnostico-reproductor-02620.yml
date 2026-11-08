@@ -1,0 +1,94 @@
+name: Diagnostico reproductor 0.26.20 (sin publicar)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnostico-reproductor-02620.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspeccionar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Descargar APK publicada y verificar integridad
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cochi
+          curl -fLsS --retry 3 --max-time 160 \
+            'https://github.com/MARIELAGALV/CO-CHIUPDATES/releases/download/v0.26.20/CO-CHI.apk' \
+            -o /tmp/cochi/base.apk
+          echo '7c771dd3f37590f843eb8dcdc8e964f3e01c08c3ff0c2babf3857fe660f4dbd1  /tmp/cochi/base.apk' | sha256sum -c -
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/aapt" dump badging /tmp/cochi/base.apk | head -n 3
+          "$BT/apksigner" verify --print-certs /tmp/cochi/base.apk | grep -Ei 'SHA-256 digest|Verified using'
+      - name: Decodificar solo para lectura
+        run: |
+          set -euo pipefail
+          curl -fLsS --retry 3 --max-time 60 -o /tmp/cochi/apktool.jar \
+            https://github.com/iBotPeaches/Apktool/releases/download/v2.12.1/apktool_2.12.1.jar
+          java -jar /tmp/cochi/apktool.jar d -f /tmp/cochi/base.apk -o /tmp/cochi/decoded
+      - name: Informar arranque, red y buffering de reproductor
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('/tmp/cochi/decoded')
+          targets=list(root.glob('smali*/com/cochi/client/*Player*.smali'))
+          targets+=list(root.glob('smali*/com/cochi/client/*Playback*.smali'))
+          terms=('setMediaItem','prepare(','setPlayWhenReady','setLoadControl','DefaultLoadControl','setBufferDurationsMs',
+            'minBufferMs','maxBufferMs','bufferForPlaybackMs','bufferForPlaybackAfterRebufferMs',
+            'PlayerView','ExoPlayer','Media3','HttpDataSource','OkHttpDataSource','DefaultHttpDataSource',
+            'setUserAgent','setAllowCrossProtocolRedirects','onPlaybackStateChanged','STATE_BUFFERING',
+            'STATE_READY','onPlayerError','retry','resolve','redirect','setVideoURI','VideoView',
+            'loadUrl','WebView','YouTube')
+          report=['CO-CHI v0.26.20 - inspeccion estatica de reproductor','Solo lectura; sin APK modificada.']
+          report.append('Clases de reproductor localizadas: '+str(len(targets)))
+          for p in sorted(set(targets)):
+            s=p.read_text(errors='replace')
+            report.append('\nCLASE '+str(p.relative_to(root))+' lineas='+str(s.count('\n')+1))
+            methods=[m.group(1).strip() for m in re.finditer(r'^\.method (.+)$',s,re.M)]
+            for method in methods:
+              if any(x in method for x in ('onCreate(','onStart(','onResume(','onPlayer','onPlayback','onError(','onPrepared(')):
+                report.append('METODO '+method[:220])
+            for term in terms:
+              count=s.lower().count(term.lower())
+              if count: report.append('REFERENCIA '+term+'='+str(count))
+          all_smali=list(root.glob('smali*/**/*.smali'))
+          for term in ('Landroidx/media3/exoplayer/ExoPlayer;','Lcom/google/android/exoplayer2/ExoPlayer;','Landroid/widget/VideoView;'):
+            n=sum(term in p.read_text(errors='replace') for p in all_smali)
+            report.append('Clases que mencionan '+term+': '+str(n))
+          out=Path('/tmp/cochi/reporte-reproductor.txt')
+          out.write_text('\n'.join(report)+'\n',encoding='utf-8')
+          print(out.read_text()[:20000])
+          PY
+      - name: Inspeccionar valores reales y secuencia de arranque
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('/tmp/cochi/decoded')
+          files=list(root.glob('smali*/com/cochi/client/PlayerActivity.smali'))
+          assert len(files)==1
+          p=files[0]
+          s=p.read_text(errors='replace')
+          lines=s.splitlines()
+          terms=('minBufferMs','maxBufferMs','bufferForPlaybackMs','bufferForPlaybackAfterRebufferMs',
+            'DefaultLoadControl','setBufferDurationsMs','Landroidx/media3/exoplayer/ExoPlayer;','setMediaItem',
+            'Landroidx/media3/exoplayer/ExoPlayer$Builder;','prepare()','setPlayWhenReady',
+            'setMediaSource','Landroid/webkit/WebView;','loadUrl','resolve','onStart()V')
+          for term in terms:
+            hits=[i for i,l in enumerate(lines) if term.lower() in l.lower()]
+            print('===',term,'matches',len(hits),'===')
+            for i in hits[:6]:
+              lo=max(0,i-18);hi=min(len(lines),i+22)
+              print('\\n'.join(f'{j+1}: {lines[j]}' for j in range(lo,hi)))
+          PY
+      - name: Adjuntar solo informe (no APK)
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-reproductor-02620
+          path: /tmp/cochi/reporte-reproductor.txt
+          retention-days: 7
