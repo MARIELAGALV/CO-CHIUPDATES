@@ -63,6 +63,29 @@ jobs:
           out.write_text('\n'.join(report)+'\n',encoding='utf-8')
           print(out.read_text()[:20000])
           PY
+      - name: Inspeccionar valores reales y secuencia de arranque
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('/tmp/cochi/decoded')
+          files=list(root.glob('smali*/com/cochi/client/PlayerActivity.smali'))
+          assert len(files)==1
+          p=files[0]
+          s=p.read_text(errors='replace')
+          lines=s.splitlines()
+          terms=('minBufferMs','maxBufferMs','bufferForPlaybackMs','bufferForPlaybackAfterRebufferMs',
+            'DefaultLoadControl','setBufferDurationsMs','Landroidx/media3/exoplayer/ExoPlayer;','setMediaItem',
+            'Landroidx/media3/exoplayer/ExoPlayer$Builder;','prepare()','setPlayWhenReady',
+            'setMediaSource','Landroid/webkit/WebView;','loadUrl','resolve','onStart()V')
+          for term in terms:
+            hits=[i for i,l in enumerate(lines) if term.lower() in l.lower()]
+            print('===',term,'matches',len(hits),'===')
+            for i in hits[:6]:
+              lo=max(0,i-18);hi=min(len(lines),i+22)
+              print('\\n'.join(f'{j+1}: {lines[j]}' for j in range(lo,hi)))
+          PY
       - name: Adjuntar solo informe (no APK)
         uses: actions/upload-artifact@v4
         with:
